@@ -118,6 +118,18 @@ demo），用它自己的输出证明工具链、烧写、接线、时钟、供�
    ⇒ 烧写前先确认没有读者占着它 ✓，失败就重试（这次 3 次里的第 1 次就过了 ✓）。
 9. **USB CDC 的读者要断言 DTR** ✓：主机不举手，固件（和多数 CDC 实现）就当你不在听 ✗ ——
    `tools/pwd_console.py` 里用 `TIOCMBIS | TIOCM_DTR|TIOCM_RTS` 补上了这一步 ✓。
+   推论：**开机那几行日志在读者就位之前就已经丢了** ✗ ⇒ 判"它跑到哪"要靠 SWD 读 RAM（第 7 条 ✓）。
+10. **SDK 2.x 的 `clock_get_hz()` 只返回内部缓存** ✗：`clocks.c` 里就是
+    `return configured_freq[clock];` ✓ ⇒ 要判"时钟到底是多少"必须**读寄存器**
+    （`clocks_hw->clk[clk_peri].div`，8.8 定点：`0x100` = ÷1、`0` = 不分频 ✓）；
+    缓存与寄存器不一致时它**不会报错** ✗（实测踩过：缓存说 125 MHz、寄存器说 peri = clk_sys ✗）。
+    细节见 [`notes/sdk2-clocks.md`](notes/sdk2-clocks.md) ✓。
+11. **动 `clk_sys`/`clk_peri` 之前先列"编译期分频清单"** ✗：面板 i80 的
+    `DEFAULT_PIO_CLK_KHZ=125000` ✓、CYW43 的 `CYW43_PIO_CLOCK_DIV_INT 2` +
+    `CYW43_PIO_CLOCK_DIV_DYNAMIC 0` ✓ 都不跟着走 ⇒ 抬频后两条总线全失准 ✗。
+    300 MHz 档的真机指纹 = `[CYW43] Failed to start CYW43` ✓，而且 PC 停在 `_exit`
+    （**不是 panic** ✗ —— 是 `main()` 走失败分支 `return` 后 crt0 调 `exit()` ✓，
+    别把它读成"芯片挂了" ✗）。见 [`notes/pico-turbo-overclock.md`](notes/pico-turbo-overclock.md) ✓。
 
 ## 6. 构建 / 烧写 / 验证入口
 

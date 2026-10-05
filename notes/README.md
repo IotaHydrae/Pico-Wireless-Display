@@ -16,6 +16,8 @@ USB 侧的协议（EP1/EP2/EP4）**不属于本仓**，权威定义在
 | 设计 | [design.md](design.md) | PWD 是什么、传输协议与组帧策略、复用边界、**已定项与 UNKNOWN 清单** |
 | 实测 | [wifi-link-pico-w.md](wifi-link-pico-w.md) | 官方 iperf 例子量出的上下行速率、条件、以及官方例子里**两处上游腐化** |
 | 实测 | [udp-ingress.md](udp-ingress.md) | **M1 收帧统计的真机验收**（100 帧零丢片，逐项对账 ✓）、协议下的踩坑、读数通道 |
+| 实测 | [pico-turbo-overclock.md](pico-turbo-overclock.md) | 超频接入：**升频成功但 CYW43 起不来** ✗（编译期分频的冲突），目前只到 240 MHz |
+| 通用 | [sdk2-clocks.md](sdk2-clocks.md) | SDK 2.x 时钟 API 的两个坑：`clock_get_hz()` 只读缓存 ✗、`set_sys_clock_khz()` 会改 `clk_peri` |
 
 （M0 之后新增的实测/踩坑文档都登记到这张表里。）
 

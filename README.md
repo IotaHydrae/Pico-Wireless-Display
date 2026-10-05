@@ -42,7 +42,7 @@ Pico Wireless Display (PWD)
 | --- | --- | --- |
 | **M0 基线** | 官方 `pico-examples` 的 `pico_w/wifi/iperf` 在本仓里能编、能烧、能测（`baseline/`，零 delta） | 设备自己打印的速率与服务端 `iperf -s` 逐次吻合 ✓（已达成，见 notes） |
 | **M1 收帧** ✓ | 连 WiFi + UDP 分片组帧 + 丢片/丢帧/带宽统计，**不上屏** | **已达成** ✓：发 100 帧 × 22000 B @30 fps ⇒ 设备 `frags_rx=1600`、`frames_complete=100`、`incomplete=0`、`bytes_complete=2 200 000`，与发送侧**逐项对账一致** ✓；0.66 MB/s = 5.33 Mbit/s（占上行 31%）✓。见 [`notes/udp-ingress.md`](notes/udp-ingress.md) |
-| **M2 上屏** ✓(v1) | 面板 = **Z350IT008（ILI9488 + GT911）** ✓；v1 走**原始 RGB565 分带**（不解码 ✓） | **已达成** ✓：120 带全部 `bands=120` / `reject=0` / `bytes` 逐字节对账 ✓（40 带/s，即 **1 整图/s** ✓）；解码（QOI ✓）是下一步 |
+| **M2 上屏** ✓(v1) | 面板 = **Z350IT008（ILI9488 + GT911）** ✓；v1 走**原始 RGB565 分带**（不解码 ✓） | **已达成** ✓：120 带全部 `bands=120` / `reject=0` / `bytes` 逐字节对账 ✓（40 带/s，即 **1 整图/s** ✓）；**下一步 = JPEG 软解** ✓（QOI 载荷在 2.2 MB/s 上放不下 ✗，见 `notes/design.md` 的 M3 一节）|
 | **M3 实时视频** | 主机侧 ffmpeg → JPEG → UDP，目标 **30 fps @480×320** | 设备侧 `0 坏帧`、``KB/帧`` 与预测值一致 |
 
 **开发顺序是强制的**：先跑通官方例子、再写自己的代码（工作区守则，见 [`AGENTS.md`](AGENTS.md) §上手顺序）。
