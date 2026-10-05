@@ -1,3 +1,6 @@
 [submodule "lib/pico-display-lib"]
 	path = lib/pico-display-lib
 	url = https://github.com/embeddedboys/pico-display-lib.git
+[submodule "lib/pico-turbo"]
+	path = lib/pico-turbo
+	url = https://github.com/IotaHydrae/pico-turbo.git

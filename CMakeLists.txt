@@ -44,6 +44,19 @@ if(NOT EXISTS "${PICO_DISPLAY_LIB_PATH}/CMakeLists.txt")
 endif()
 add_subdirectory("${PICO_DISPLAY_LIB_PATH}")
 
+# ── pico-turbo：运行时接管 clk_sys 与核心电压（照 PUD 的接法 ✓）──
+# 放在显示库**之后**：它的 flash 分频推导要覆盖 PICO_FLASH_SPI_CLKDIV（PUD 的注释 ✓）。
+# **构建时不指定目标频率它就是 no-op** ✓，所以接进来本身不改变现有行为 ✓；要用：
+#   cmake .. -DPICO_TURBO_PROFILE=extreme    # 官方 Pico W: 440 MHz @1.30 V, DIV 4 —— 实测+30 次双核 soak ✓
+#   cmake .. -DPICO_TURBO_PROFILE=safe       # 240 MHz, stock 电压
+# ⚠️ `-DPICO_BOARD=pico_w` 不给档位时，pico-turbo **默认选 `extreme`(440 MHz)** ✗ —— 而本仓实测
+# 440/360/300 档下 **CYW43 起不来** ✗（升频本身成功 ✓，坏在面板与 CYW43 的**编译期分频** ✗，
+# 见 notes/pico-turbo-overclock.md ✓）⇒ 本仓把默认档钉在 `safe`(240 MHz) ✓：什么都不指定也得到能用的固件 ✓。
+if(NOT DEFINED PICO_TURBO_PROFILE)
+    set(PICO_TURBO_PROFILE safe)
+endif()
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/lib/pico-turbo" "${CMAKE_BINARY_DIR}/pico-turbo")
+
 add_executable(pwd
     src/main.c
     src/pwd_net.c
@@ -64,6 +77,7 @@ target_link_libraries(pwd
     pico_cyw43_arch_lwip_threadsafe_background
     pico_stdlib
     pico-display-lib                     # 面板/总线/背光的唯一出处（头文件由它 PUBLIC 导出 ✓）
+    pico_turbo                           # 时钟/电压/flash 分频（默认 no-op ✓）
 )
 
 pico_add_extra_outputs(pwd)

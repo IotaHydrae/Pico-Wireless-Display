@@ -19,6 +19,9 @@
 #include "pwd_net.h"
 #include "panel.h"
 
+#include "pico_turbo.h"
+#include "hardware/clocks.h"
+
 #define REPORT_PERIOD_MS 2000
 
 static void report(void) {
@@ -42,8 +45,54 @@ static void report(void) {
     prev = s;
 }
 
+/* 面板 i80 的 PIO 分频与 CYW43 的 SPI 分频都是**编译期**按这个 clk_peri 算死的：
+ * `DEFAULT_PIO_CLK_KHZ=125000`（库的 drivers/clk，实测注入值 ✓）、
+ * `CYW43_PIO_CLOCK_DIV_INT 2` 且 `CYW43_PIO_CLOCK_DIV_DYNAMIC 0`（cyw43_driver.h ✓）。
+ * 它们**不会**跟着 clk_sys 走 ⇒ 谁改了 clk_peri，谁就得负责把它拨回来。 */
+#define PERI_BASELINE_KHZ 125000u
+
+/* pico-turbo 抬 clk_sys 时会把 clk_peri 一并指到 clk_sys ✗（实测 s_state: peri=sys ✓）。
+ * 不拨回来的后果实测过（300 MHz 档）：CYW43 报 `[CYW43] Failed to start CYW43`、
+ * WiFi 连不上 ⇒ main() 走失败分支返回 ⇒ crt0 调 exit() ⇒ 现场 PC 停在 `_exit` 的 bkpt
+ * （看起来像 panic，其实不是 ✗）；同一档下面板总线也会涨到 300/2.5 = 120 MHz ✗。 */
+static uint32_t peri_div(void) {
+    volatile uint32_t *div = &clocks_hw->clk[clk_peri].div;
+    return *div;
+}
+
+static void restore_peri_clock(void) {
+    /* src_freq 取 pico-turbo 报告的实际频率：`clock_get_hz()` 在 SDK 2.x 里只返回
+     * `configured_freq[]` **缓存**（clocks.c: ledger 一行 `return configured_freq[clock];` ✓），
+     * 缓存过时就会算错分频、而且不会报错 ✗。 */
+    const uint32_t sys_khz = pico_turbo_state().sys_clk_khz;
+    const uint32_t sys_hz = sys_khz ? sys_khz * 1000u : clock_get_hz(clk_sys);
+    const uint32_t div_before = peri_div();
+
+    (void)clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, sys_hz,
+                          PERI_BASELINE_KHZ * 1000u);
+
+    /* 判据是**寄存器回读**，不是缓存 ✓（8.8 定点：div = clk_sys/125MHz × 256） */
+    const uint32_t div_want = (uint32_t)(((uint64_t)sys_hz << 8) / (PERI_BASELINE_KHZ * 1000u));
+    printf("[clk] clk_peri: div 0x%x → 0x%x（期望 0x%x，sys=%u kHz）\n", (unsigned)div_before,
+           (unsigned)peri_div(), (unsigned)div_want, (unsigned)sys_khz);
+}
+
 int main(void) {
+    /* pico-turbo 的契约：**最先**调用，在 stdio_init_all() 与任何外设初始化之前 ✓
+     * （它的 README「调用之后」与 API 一节明确写了 ✓）。 */
+    pico_turbo_init();
+
     stdio_init_all();
+
+    /* 先接管时钟，再初始化面板与 CYW43（两者都吃 clk_peri ✓） */
+    restore_peri_clock();
+    {
+        pico_turbo_state_t st = pico_turbo_state();
+        printf("[clk] pico-turbo: enabled=%d reached=%d sys=%u kHz vreg_sel=%u peri=%u kHz flash=%u kHz usb_ok=%d\n",
+               (int)st.enabled, (int)st.reached, (unsigned)st.sys_clk_khz,
+               (unsigned)st.vreg_sel, (unsigned)st.peri_clk_khz,
+               (unsigned)st.flash_clk_khz, (int)st.usb_ok);
+    }
 
     /* 面板先起：屏幕不依赖 WiFi，起不来也能立刻从"有没有颜色"看出来 ✓ */
     if (!panel_bringup()) {
