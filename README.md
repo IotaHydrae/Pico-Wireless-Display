@@ -31,18 +31,18 @@ Pico Wireless Display (PWD)
 | 件 | 型号 / 事实 |
 | --- | --- |
 | 板子 | 官方 **Pico W**：RP2040（B2）+ CYW43439（**只支持 2.4G**）+ 2 MB flash（W25Q16JV） |
-| 调试器 | XV-Link / CMSIS-DAP（`1a86:7021`）接 SWD；**UART0(GP0/1) 接到它的 UART 桥** = `/dev/ttyACM0` @115200 |
+| 调试器 | XV-Link / CMSIS-DAP（`1a86:7021`）接 SWD ✓；UART0(GP0/1) → 它的 UART 桥（`/dev/ttyACM0` @115200）—— **当前这段串口线是断开的** ✗，所以读数走 **USB stdio**（插 Pico W 自己的 USB ✓）或 **SWD 直接读 RAM 里的计数器** ✓，见 [`notes/udp-ingress.md`](notes/udp-ingress.md) |
 | 烧写 | `openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c 'program <elf> verify reset exit'` ✓（不用按 BOOTSEL） |
-| 面板 | **YT350S006**：480×320、**8080 16-bit 并口**、控制器 **ST7796**（`YT350S006` 是它的初始化变体 ✓）；触摸 **GT911**（I2C） |
-| 面板接线 | **待确认** ✗ —— PUD 里 `configs/pico_dm_yt350s006.cmake` 是 **SPI** 变体，不能照抄；Pico W 上 **GPIO 23/24/25/29 被无线模组占用**，排布要重算。细节与凭据见 [`notes/design.md`](notes/design.md) |
+| 面板 | **Z350IT008 模组**（用户按屏上丝印确认 ✓）：**驱动 ILI9488** ✓、触摸 **GT911** ✓、**8080 16-bit**、原生 320×480 + rotation 1 ⇒ 逻辑 480×320 ✓ |
+| 面板接线 | 数据 `GP0..GP15`、`WR 19`、`RS 20`、`RST 22`、**CS 硬件下拉**、背光 `28`、触摸 `CTP_RST 18`/`CTP_IRQ 21`/`I2C 26·27` ✓（配置见 [`notes/design.md`](notes/design.md)）|
 
 ## 路线
 
 | 里程碑 | 内容 | 判据 |
 | --- | --- | --- |
 | **M0 基线** | 官方 `pico-examples` 的 `pico_w/wifi/iperf` 在本仓里能编、能烧、能测（`baseline/`，零 delta） | 设备自己打印的速率与服务端 `iperf -s` 逐次吻合 ✓（已达成，见 notes） |
-| **M1 收帧** | 连 WiFi + UDP 分片组帧 + 丢片/丢帧/带宽统计，**不上屏** | 关系型 oracle：`收下 + 丢弃 == 发送`（PC 侧发 N 帧，设备侧自报计数） |
-| **M2 上屏** | 接面板（待定），复用 `pico-display-lib` 刷屏 | 人眼确认 + 帧计数自洽 + 静态图逐像素比对 |
+| **M1 收帧** ✓ | 连 WiFi + UDP 分片组帧 + 丢片/丢帧/带宽统计，**不上屏** | **已达成** ✓：发 100 帧 × 22000 B @30 fps ⇒ 设备 `frags_rx=1600`、`frames_complete=100`、`incomplete=0`、`bytes_complete=2 200 000`，与发送侧**逐项对账一致** ✓；0.66 MB/s = 5.33 Mbit/s（占上行 31%）✓。见 [`notes/udp-ingress.md`](notes/udp-ingress.md) |
+| **M2 上屏** ✓(v1) | 面板 = **Z350IT008（ILI9488 + GT911）** ✓；v1 走**原始 RGB565 分带**（不解码 ✓） | **已达成** ✓：120 带全部 `bands=120` / `reject=0` / `bytes` 逐字节对账 ✓（40 带/s，即 **1 整图/s** ✓）；解码（QOI ✓）是下一步 |
 | **M3 实时视频** | 主机侧 ffmpeg → JPEG → UDP，目标 **30 fps @480×320** | 设备侧 `0 坏帧`、``KB/帧`` 与预测值一致 |
 
 **开发顺序是强制的**：先跑通官方例子、再写自己的代码（工作区守则，见 [`AGENTS.md`](AGENTS.md) §上手顺序）。

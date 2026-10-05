@@ -58,24 +58,31 @@ demo），用它自己的输出证明工具链、烧写、接线、时钟、供�
 | `tests/` | **解释观察**的验证脚本（显式 oracle ⇒ PASS/FAIL/INCONCLUSIVE） | 调用 `tools/`，不反向；硬件缺失是 `ENVIRONMENT_ERROR` 不是 `FAIL` |
 | `scripts/` | 构建/取依赖/凭据一类的一次性脚本 | 幂等、可重跑；不藏状态 |
 | `skills/` | 工作区四份 skill 的**副本** | 与工作区逐字节相同（见上） |
-| `src/`（M1 之后） | 本仓自己的固件代码 | 传输与帧调度在这里；显示/解码用 `pico-display-lib` |
+| `src/` | 本仓自己的固件代码（M1 收帧统计已落地 ✓） | 传输与帧调度在这里；显示/解码用 `pico-display-lib` |
 
 ## 3. 与其他仓的关系
 
 - **共用显示与解码**：`lib/pico-display-lib`（子模块）= 面板驱动 / 总线 / 输入 / QOI·RLE 解码。
   **不要在 PWD 里长第二套面板驱动**，也不要把面板参数写死 —— 面板配置走 `configs/`（M2 时建立，
   照 `Pico-USB-Display/configs/` 的写法）。
-  本仓面板 = **YT350S006**（480×320、**8080 16-bit**、控制器 ST7796 的 `YT350S006` 变体）+ **GT911** 触摸；
-  **PUD 那份 `pico_dm_yt350s006.cmake` 是 SPI 变体，不能照抄** ✗；而且 Pico W 上
-  **GPIO 23/24/25/29 归无线模组** ✓（`boards/pico_w.h` 的 `CYW43_DEFAULT_PIN_*`）⇒ 引脚排布要重算，
-  见 `notes/design.md` 的"面板与触摸"。
+  本仓面板 = **Z350IT008 模组**（用户按屏上丝印确认 ✓），**屏幕驱动 = ILI9488** ✓、触摸 = **GT911** ✓，
+  8080 16-bit 并口、原生 320×480 + rotation 1（逻辑 480×320 ✓）。
+  ⚠️ 之前按 "YT350S006 / ST7796" 配过 ✗ —— 那是**记错型号** ✗，屏幕全白 ✗；换 ILI9488 后立刻点亮 ✓。
+  引脚见 [`notes/design.md`](notes/design.md) 的"实际接线"表 ✓（数据 `GP0..GP15`、`WR 19`、`RS 20`、
+  `RST 22`、**CS 硬件下拉**、背光 `28`、触摸 `CTP_RST 18`/`CTP_IRQ 21`/`I2C 26·27`）。
+  **不要照抄同系列模块的引脚** ✗：库里 ILI9488 那块模块是 `CS 18`，而本模块的 18 是触摸复位 ✓。
+  配置落在 `lib/pico-display-lib/configs/pico_dm_z350it008-8080.cmake` ✓ —— 面板配置的归属地是那个库
+  （本仓 `configs/` 与 PUD 一样是**指向它的软链接** ✓），选择用 `-DPUD_CONFIG=<名字>` ✓。
+  该配置同时选中 `TFT_MODEL_ZT350IT008` ⇒ 用它的**专属初始化序列** ✓（库默认那套是 QD3503728 的 ✗，
+  伽马/帧率/VCOM 都不同，用错色彩不对 ✓）。
+  **触摸驱动还没启用**（`INDEV_DRV_NOT_USED 1` ✓）：面板先通，触摸是下一步 ✓。
 - **PUD 是最直接的参考**（`../Pico-USB-Display/`）：它的解码流水线、帧槽背压、看门狗自愈、
   以及"不要在中断里解码"这类结论同样适用；但**它的协议是 USB 的**，PWD 不复用那套端点协议。
 - **PC 侧工具**：`pico_dm_qd3503728_esp32p4_idf/wireless/p4_wireless_display/tools/` 里的
   `pud_media.py`（ffmpeg → JPEG）与 `pudnet.py`（发送端）是现成的起点，能复用就复用，
   不要重写编码参数那套已经踩过坑的映射。
 
-## 4. 传输设计（M1 定稿前先读 `notes/design.md`）
+## 4. 传输设计（改协议前先读 `notes/design.md` 与 `notes/udp-ingress.md`）
 
 - 帧走 **UDP + 分片组帧**；字段布局沿用 P4 无线投屏那套（`[u32 帧号][u16 片序][u16 片数][u32 总长]`
   + ≤1400 B 载荷），**字段只追加、不重排、不复用编号** —— 将来 PC 侧工具要能两边通用。
@@ -95,6 +102,22 @@ demo），用它自己的输出证明工具链、烧写、接线、时钟、供�
    Release 构建下它**不会发生**。官方例子里就有这种代码（见 `notes/wifi-link-pico-w.md`）。
 6. **驱动版本、宏定义、文件是否真的被编译**，三件事都要在相信任何数字之前核实（编译行 / 生成物
    `strings` / 唯一字符串，别用会自匹配的 `grep`）。
+7. **读数通道要有备选** ✓：调试串口可能没接（接面板时断开过 ✗），而且本接线表**没有留给 UART 的脚** ✗
+   （GP16 被库要求的 CS 占位拿走）⇒ 固件**只走 USB stdio** ✓：插上 Pico W 自己的 USB 就有控制台 ✓。
+   也可以**用 SWD 直接读 RAM 里的计数器** ✓
+   （`nm` 取 `&s_stats` → `openocd … -c 'init' -c 'halt' -c 'mdw …' -c 'resume'`）。
+   **写内存前两个核都要 halt** ✗（0.12 把它们当 SMP 组，只停 core0 会报 `not halted` / `resume failed`）；
+   收尾同样要把**两个核**都停过再 `resume` ✓，否则 `resume failed` 会把固件留在 halt 上 ✗。
+   `mdw` 的地址要**字对齐** ✗（比如 `s_ready` 落在 `…747`，要读它所在的那个字再解释字节 ✓）。
+   **符号地址每次重编都会变** ✗✗：必须每次用当前 `build/pwd.elf` 现取（`arm-none-eabi-nm … | awk '$3=="s_stats"'` ✓）
+   —— 把地址写进脚本再复用，读到的是别的变量、结论全是假的 ✗（我就这么误报过一次"固件没在跑" ✗）。
+   判断"设备没跑"要看 PC/符号，**不能只看"串口没输出"** ✗。
+8. **烧写时别同时开着 USB CDC** ✗（观察，未复现 ✓）：有一次在 `/dev/ttyACM1` 被读者打开的情况下
+   烧写，openocd 报 `CMSIS-DAP transfer count mismatch` / `Could not load data into target bounce buffer` /
+   `error writing to flash` ✓；关掉读者重试**第一次就成功** ✓。改动 USB stdio 的目标时尤其容易碰到 ✓
+   ⇒ 烧写前先确认没有读者占着它 ✓，失败就重试（这次 3 次里的第 1 次就过了 ✓）。
+9. **USB CDC 的读者要断言 DTR** ✓：主机不举手，固件（和多数 CDC 实现）就当你不在听 ✗ ——
+   `tools/pwd_console.py` 里用 `TIOCMBIS | TIOCM_DTR|TIOCM_RTS` 补上了这一步 ✓。
 
 ## 6. 构建 / 烧写 / 验证入口
 
