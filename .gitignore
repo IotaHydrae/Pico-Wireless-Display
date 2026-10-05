@@ -1,0 +1,17 @@
+# 构建目录（build/、build-baseline/、build-*/ …）
+build*/
+
+# 取来的上游源码：逐字不改，随时可用 scripts/fetch-deps.sh 重新取 ✓
+third_party/
+
+# WiFi 凭据（绝不进仓 ✗）
+wifi-config.cmake
+*.wifi-config.cmake
+
+# Python 工具产物
+__pycache__/
+*.pyc
+
+# 桌面/编辑器
+.cache/
+compile_commands.json
